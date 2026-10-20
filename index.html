@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>一六日誌</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="一六日誌">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#ffffff">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root{--bg:#f4f5f7;--fg:#1d2328;--muted:#5d6670;--red:#c00000;--blue:#0a5fa8;--card:#fff;--line:#dfe3e8}
+  @media (prefers-color-scheme:dark){:root{--bg:#15181b;--fg:#ecebe7;--muted:#a3aab2;--card:#1f2428;--line:#343b41;--red:#ff5a5a;--blue:#5aa8ec}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
+       padding:max(24px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 32px max(16px,env(safe-area-inset-left))}
+  main{max-width:460px;margin:0 auto;display:grid;gap:18px}
+  .logo{display:block;width:180px;height:180px;margin:8px auto 0;border-radius:36px;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+  h1{font-size:24px;margin:0;text-align:center}
+  .go{display:block;text-align:center;background:var(--blue);color:#fff;text-decoration:none;font-weight:700;font-size:18px;padding:14px;border-radius:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+  .card h2{font-size:16px;margin:0 0 6px}
+  ol{margin:0;padding-left:22px}
+  .muted{color:var(--muted);font-size:14px;text-align:center}
+  b.k{display:inline-block;padding:0 6px;border:1px solid var(--line);border-radius:6px;font-weight:600}
+</style>
+<script>
+  var APP = 'https://script.google.com/macros/s/AKfycbw-MXuDDa5Qs6PpkMcdDq46FCAX9zCBhC1DMtbPkypCWiIIs5l7ia3K9KHJSCOs8rTL/exec';
+  // 從主畫面圖示打開時直接進系統；用瀏覽器打開時顯示安裝說明
+  var standalone = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  if (standalone || /[?&]go\b/.test(location.search)) location.replace(APP);
+</script>
+</head>
+<body>
+<main>
+  <img class="logo" src="icon-512.png" alt="UNILUX">
+  <h1>一六工程日誌</h1>
+  <a class="go" id="go" href="#">進入系統</a>
+  <div class="card">
+    <h2>iPhone：加到主畫面</h2>
+    <ol>
+      <li>用 <b>Safari</b> 打開這一頁</li>
+      <li>按下方 <b class="k">分享</b>（方框加箭頭）</li>
+      <li>選 <b class="k">加入主畫面</b> → <b class="k">新增</b></li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2>Android：加到主畫面</h2>
+    <ol>
+      <li>用 <b>Chrome</b> 打開這一頁</li>
+      <li>按右上 <b class="k">⋮</b> → <b class="k">加到主畫面</b>（或「安裝應用程式」）</li>
+    </ol>
+  </div>
+  <p class="muted">之後從主畫面的 UNILUX 圖示打開，會直接進入系統。</p>
+</main>
+<script>document.getElementById('go').href = APP;</script>
+</body>
+</html>

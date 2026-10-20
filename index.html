@@ -26,6 +26,10 @@
   .card h2{font-size:16px;margin:0 0 6px}
   ol{margin:0;padding-left:22px}
   .muted{color:var(--muted);font-size:14px;text-align:center}
+  #cards{display:grid;gap:12px}
+  .card.hit{border:2px solid var(--blue)}
+  .now{margin:0;text-align:center;font-weight:700;color:var(--blue)}
+  .now:empty{display:none}
   b.k{display:inline-block;padding:0 6px;border:1px solid var(--line);border-radius:6px;font-weight:600}
 </style>
 <script>
@@ -40,23 +44,55 @@
   <img class="logo" src="icon-512.png" alt="UNILUX">
   <h1>一六工程日誌</h1>
   <a class="go" id="go" href="#">進入系統</a>
-  <div class="card">
-    <h2>iPhone：加到主畫面</h2>
+  <p class="now" id="now"></p>
+  <div id="cards">
+  <div class="card" data-b="inapp">
+    <h2>LINE／Facebook／其他 App 裡打開的</h2>
     <ol>
-      <li>用 <b>Safari</b> 打開這一頁</li>
-      <li>按下方 <b class="k">分享</b>（方框加箭頭）</li>
+      <li>這裡<b>不能</b>加到主畫面</li>
+      <li>按右上 <b class="k">⋯</b> 或 <b class="k">⋮</b> → <b class="k">用瀏覽器開啟</b>（Safari 或 Chrome）</li>
+      <li>再照下面該瀏覽器的步驟做</li>
+    </ol>
+  </div>
+  <div class="card" data-b="safari">
+    <h2>Safari</h2>
+    <ol>
+      <li>按 <b class="k">分享</b>（方框加箭頭）</li>
       <li>選 <b class="k">加入主畫面</b> → <b class="k">新增</b></li>
     </ol>
   </div>
-  <div class="card">
-    <h2>Android：加到主畫面</h2>
+  <div class="card" data-b="chrome">
+    <h2>Chrome</h2>
     <ol>
-      <li>用 <b>Chrome</b> 打開這一頁</li>
-      <li>按右上 <b class="k">⋮</b> → <b class="k">加到主畫面</b>（或「安裝應用程式」）</li>
+      <li>按網址列旁的 <b class="k">⋮</b> 或 <b class="k">分享</b></li>
+      <li>選 <b class="k">加到主畫面</b>（或「安裝應用程式」）→ <b class="k">新增</b></li>
     </ol>
+  </div>
+  <div class="card" data-b="samsung">
+    <h2>Samsung 網際網路</h2>
+    <ol>
+      <li>按下方 <b class="k">≡</b></li>
+      <li>選 <b class="k">新增頁面至</b> → <b class="k">主螢幕</b></li>
+    </ol>
+  </div>
   </div>
   <p class="muted">之後從主畫面的 UNILUX 圖示打開，會直接進入系統。</p>
 </main>
-<script>document.getElementById('go').href = APP;</script>
+<script>
+  document.getElementById('go').href = APP;
+  (function () {
+    var ua = navigator.userAgent, b = '', name = '';
+    if (/Line\/|FBAN|FBAV|Instagram|MicroMessenger|WhatsApp/i.test(ua)) { b = 'inapp'; name = 'App 內建瀏覽器'; }
+    else if (/SamsungBrowser/i.test(ua)) { b = 'samsung'; name = 'Samsung 網際網路'; }
+    else if (/CriOS|Chrome\//i.test(ua) && !/Edg/i.test(ua)) { b = 'chrome'; name = 'Chrome'; }
+    else if (/Safari/i.test(ua) && /iPhone|iPad|Macintosh/i.test(ua)) { b = 'safari'; name = 'Safari'; }
+    if (!b) return;
+    var box = document.getElementById('cards'), c = box.querySelector('[data-b="' + b + '"]');
+    if (!c) return;
+    c.className += ' hit';
+    box.insertBefore(c, box.firstChild);
+    document.getElementById('now').textContent = '你目前用的是：' + name + '，照第一張做';
+  })();
+</script>
 </body>
 </html>

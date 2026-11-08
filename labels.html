@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一六日誌・物料標籤</title>
+<!-- qrcode.js：QR Code Generator for JavaScript（Kazuhiko Arase，MIT），v1.4.4，原檔未修改 -->
+<script src="qrcode.js"></script>
+<style>
+  @page { size: A4; margin: 0 }
+  * { box-sizing: border-box }
+  body { margin: 0; background: #e9ecef; color: #111;
+         font-family: -apple-system, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif }
+  .bar { position: sticky; top: 0; z-index: 2; background: #fff; border-bottom: 1px solid #ddd; padding: 10px 14px;
+         display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 14px }
+  .bar b { font-size: 16px }
+  .bar label { display: flex; gap: 6px; align-items: center }
+  .bar input { width: 64px; font: inherit; padding: 4px 6px }
+  .bar button { font: inherit; font-weight: 700; padding: 8px 20px; border: 0; border-radius: 8px; background: #0a5fa8; color: #fff; cursor: pointer }
+  .tip { width: 100%; margin: 0; color: #555; font-size: 13px; line-height: 1.5 }
+  .err { max-width: 560px; margin: 40px auto; padding: 20px; background: #fff; border-radius: 10px; font-size: 16px; line-height: 1.6 }
+  .pages { padding: 16px 0 40px }
+  /* A4 一張：3 欄 × 8 列，每格 70×37mm；8×37＝296mm，上下各留 0.5mm */
+  .sheet { position: relative; width: 210mm; height: 297mm; margin: 0 auto 16px; background: #fff; overflow: hidden;
+           box-shadow: 0 1px 6px rgba(0,0,0,.15); break-after: page; page-break-after: always }
+  .sheet:last-child { break-after: auto; page-break-after: auto }
+  .grid { position: absolute; left: 0; top: .5mm; display: grid; grid-template-columns: repeat(3, 70mm); grid-auto-rows: 37mm }
+  .cell { width: 70mm; height: 37mm; outline: .2mm dashed #d0d0d0 }
+  .cell.skip { background: repeating-linear-gradient(45deg, #fafafa 0 2mm, #f0f0f0 2mm 4mm) }
+  /* 內容往內縮：印表機四周約 4mm 印不到 */
+  .lab { display: flex; gap: 3mm; align-items: center; padding: 4.5mm 4mm 4mm 5mm; height: 100% }
+  .qr { flex: none; width: 27mm; height: 27mm }
+  .qr svg { display: block; width: 100%; height: 100% }
+  .txt { min-width: 0; display: flex; flex-direction: column; gap: .7mm }
+  .tag { align-self: flex-start; font-size: 7.5pt; font-weight: 700; color: #fff; padding: .2mm 1.8mm; border-radius: 1mm;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  .tag.m { background: #2e7d50 } .tag.b { background: #c05a1e }
+  .code { font-size: 15pt; font-weight: 700; line-height: 1.1 }
+  .name { font-size: 9pt; line-height: 1.25; max-height: 2.5em; overflow: hidden }
+  .sub { font-size: 7pt; line-height: 1.3; color: #333; word-break: break-all }
+  .sub.bno { font-size: 6.8pt; white-space: nowrap; word-break: normal; letter-spacing: -.05mm }
+  .foot { font-size: 6.5pt; color: #777 }
+  @media print {
+    body { background: #fff }
+    .bar, .err { display: none !important }
+    .pages { padding: 0 }
+    .sheet { margin: 0; box-shadow: none }
+    .cell { outline: none }
+    .cell.skip { background: none }
+  }
+</style>
+</head>
+<body>
+<div class="bar" id="bar" hidden>
+  <b>物料標籤</b>
+  <span id="summary"></span>
+  <label>從第 <input type="number" id="start" min="1" max="24" value="1"> 格開始</label>
+  <label>位置微調：往右 <input type="number" id="offX" step="0.5" min="-5" max="5" value="0"> mm</label>
+  <label>往下 <input type="number" id="offY" step="0.5" min="-5" max="5" value="0"> mm</label>
+  <button type="button" id="print">列印</button>
+  <p class="tip">用 A4 24 格 70×37mm 標籤紙（例如龍德 LD-802、阿波羅 9624）。列印時縮放選「實際大小／100%」、邊界選「無」、不要勾頁首頁尾。
+    第一次先用白紙印一張，疊在標籤紙上對著光看位置；偏了就用「位置微調」，設定會記在這台電腦。印過一半的標籤紙用「從第幾格開始」接著印（斜線格是跳過的）。</p>
+</div>
+<div class="pages" id="pages"></div>
+<script>
+(function () {
+  'use strict';
+  var PER_PAGE = 24;
+  var MAT = /^[A-Z]{2,}-\d{3,}$/, BATCH = /^[A-Z]{2,}-\d{3,}-\d{8}-\d{2,}$/;
+  var base = location.href.split('#')[0].split('?')[0].replace(/labels\.html$/, '');
+
+  function fromB64url(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    var bin = atob(s), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+  }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fail(msg) {
+    var d = el('div', 'err', msg);
+    document.body.appendChild(d);
+  }
+
+  // 標籤資料放在網址 # 後面（不會送到任何伺服器）：{items: [{t:'m'|'b', c:物料代號, b:批次碼, n:名稱, s:說明}]}
+  var items = [];
+  try {
+    var data = JSON.parse(fromB64url(location.hash.slice(1)));
+    (data.items || []).forEach(function (x) {
+      var c = String(x.c || '').toUpperCase(), b = String(x.b || '').toUpperCase();
+      if (!MAT.test(c)) return;
+      if (x.t === 'b' && !(BATCH.test(b) && b.indexOf(c + '-') === 0)) return;
+      items.push({ t: x.t === 'b' ? 'b' : 'm', c: c, b: x.t === 'b' ? b : '', n: String(x.n || ''), s: String(x.s || '') });
+    });
+  } catch (e) { /* 下面統一處理 */ }
+  if (!items.length) { fail('沒有標籤資料。請從系統「📦 物料進出 → 📊 庫存統計 → 🏷️ 列印標籤」打開這一頁。'); return; }
+  if (typeof qrcode !== 'function') { fail('QR 產生器沒有載入，請重新整理這一頁。'); return; }
+
+  var startEl = document.getElementById('start'), offXEl = document.getElementById('offX'), offYEl = document.getElementById('offY');
+  try {
+    var saved = JSON.parse(localStorage.getItem('yl6_label_off') || 'null');
+    if (saved) { offXEl.value = saved.x || 0; offYEl.value = saved.y || 0; }
+  } catch (e) { /* 無痕視窗等情況不記 */ }
+
+  function label(it) {
+    var url = base + '?m=' + encodeURIComponent(it.c) + (it.b ? '&b=' + encodeURIComponent(it.b) : '');
+    var q = qrcode(0, 'M');
+    q.addData(url);
+    q.make();
+    var box = el('div', 'lab'), qr = el('div', 'qr'), txt = el('div', 'txt');
+    qr.innerHTML = q.createSvgTag({ cellSize: 1, margin: 0, scalable: true });   // url 只含驗證過的代號
+    txt.appendChild(el('span', 'tag ' + it.t, it.t === 'b' ? '批次' : '物料'));
+    txt.appendChild(el('div', 'code', it.c));
+    if (it.n) txt.appendChild(el('div', 'name', it.n));
+    if (it.b) txt.appendChild(el('div', 'sub bno', it.b));   // 上面的「批次」標籤已說明，這行只放批次碼，不換行
+    it.s.split('\n').filter(String).forEach(function (s) { txt.appendChild(el('div', 'sub', s)); });
+    txt.appendChild(el('div', 'foot', '手機相機掃描 → 物料進出'));
+    box.appendChild(qr);
+    box.appendChild(txt);
+    return box;
+  }
+
+  function num(input, lo, hi, dflt) {
+    var v = Number(input.value);
+    return isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt;
+  }
+
+  function render() {
+    var start = Math.round(num(startEl, 1, PER_PAGE, 1)), ox = num(offXEl, -5, 5, 0), oy = num(offYEl, -5, 5, 0);
+    try { localStorage.setItem('yl6_label_off', JSON.stringify({ x: ox, y: oy })); } catch (e) { /* ignore */ }
+    var total = start - 1 + items.length, pages = Math.ceil(total / PER_PAGE);
+    var root = document.getElementById('pages');
+    while (root.firstChild) root.removeChild(root.firstChild);
+    for (var p = 0; p < pages; p++) {
+      var sheet = el('div', 'sheet'), grid = el('div', 'grid');
+      grid.style.left = ox + 'mm';
+      grid.style.top = (0.5 + oy) + 'mm';
+      for (var k = 0; k < PER_PAGE; k++) {
+        var i = p * PER_PAGE + k, cell = el('div', 'cell');
+        if (i < start - 1) cell.className += ' skip';
+        else if (i - (start - 1) < items.length) cell.appendChild(label(items[i - (start - 1)]));
+        grid.appendChild(cell);
+      }
+      sheet.appendChild(grid);
+      root.appendChild(sheet);
+    }
+    var nm = items.filter(function (x) { return x.t === 'm'; }).length;
+    document.getElementById('summary').textContent = '共 ' + items.length + ' 張（物料 ' + nm + '、批次 ' + (items.length - nm) + '），A4 ' + pages + ' 張';
+  }
+
+  [startEl, offXEl, offYEl].forEach(function (n) { n.addEventListener('change', render); });
+  document.getElementById('print').addEventListener('click', function () { window.print(); });
+  document.getElementById('bar').hidden = false;
+  render();
+})();
+</script>
+</body>
+</html>

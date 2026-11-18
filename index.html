@@ -34,15 +34,19 @@
 </style>
 <script>
   var APP = 'https://script.google.com/macros/s/AKfycbw-MXuDDa5Qs6PpkMcdDq46FCAX9zCBhC1DMtbPkypCWiIIs5l7ia3K9KHJSCOs8rTL/exec';
-  // 物料標籤的 QR：?m=物料代號（批次標籤再加 &b=批次碼）→ 帶著參數直接進系統的「物料進出」
+  // 標籤的 QR：?m=物料代號（批次再加 &b=批次碼）、?t=工具編號、?x=工具箱編號 → 帶著參數直接進系統對應的畫面
   // 只轉傳格式正確的代號；以後 Apps Script 網址換了只要改上面 APP，已經貼出去的標籤不用重印
   var FWD = (function () {
-    var m = '', b = '';
+    var q = {};
     location.search.replace(/^\?/, '').split('&').forEach(function (kv) {
-      var p = kv.split('='), v = decodeURIComponent((p[1] || '').replace(/\+/g, ' ')).trim().toUpperCase();
-      if (p[0] === 'm') m = v;
-      if (p[0] === 'b') b = v;
+      var p = kv.split('=');
+      var v = (p[1] || '').replace(/\+/g, ' ');
+      try { v = decodeURIComponent(v); } catch (e) { v = ''; }   // 壞掉的 % 編碼就當沒有
+      if (p[0]) q[p[0]] = v.trim().toUpperCase();
     });
+    if (/^[A-Z]{2,}-\d{3,}-\d{2,}$/.test(q.t || '')) return 't=' + encodeURIComponent(q.t);
+    if (/^TB-\d{3,}$/.test(q.x || '')) return 'x=' + encodeURIComponent(q.x);
+    var m = q.m || '', b = q.b || '';
     if (!/^[A-Z]{2,}-\d{3,}$/.test(m)) return '';
     return 'm=' + encodeURIComponent(m) + (/^[A-Z]{2,}-\d{3,}-\d{8}-\d{2,}$/.test(b) && b.indexOf(m + '-') === 0 ? '&b=' + encodeURIComponent(b) : '');
   })();

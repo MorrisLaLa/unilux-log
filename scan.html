@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>一六日誌 掃描</title>
+<meta name="theme-color" content="#000000">
+<style>
+  /* 掃描頁一律深色：相機畫面周圍暗，框線才看得清楚 */
+  :root{--fg:#f3f4f1;--muted:#b9c0c4;--ok:#5fd18b;--bad:#ff7a6b;--line:rgba(255,255,255,.85)}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#000;color:var(--fg);font:16px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+  [hidden]{display:none!important}
+  .wrap{position:fixed;inset:0;display:grid;grid-template-rows:auto 1fr auto}
+  header{padding:max(12px,env(safe-area-inset-top)) 16px 10px;display:flex;justify-content:space-between;align-items:center;gap:12px;background:rgba(0,0,0,.6);z-index:2}
+  h1{margin:0;font-size:18px}
+  button{font:inherit;font-size:16px;min-height:44px;padding:8px 16px;border-radius:10px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:var(--fg);cursor:pointer}
+  button.pri{background:#f3f4f1;color:#111;border-color:#f3f4f1;font-weight:700}
+  .stage{position:relative;overflow:hidden}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .frame{position:absolute;left:50%;top:50%;width:min(68vw,68vh,320px);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:18px;
+         box-shadow:0 0 0 9999px rgba(0,0,0,.45);outline:3px solid var(--line);outline-offset:-3px}
+  .frame.hit{outline-color:var(--ok)}
+  footer{padding:12px 16px max(16px,env(safe-area-inset-bottom));background:rgba(0,0,0,.6);display:grid;gap:10px;z-index:2}
+  .msg{margin:0;text-align:center;min-height:1.5em}
+  .msg.ok{color:var(--ok);font-weight:700}
+  .msg.bad{color:var(--bad)}
+  .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .hint{margin:0;text-align:center;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1 id="title">掃描</h1><button type="button" id="cancel">取消</button></header>
+  <div class="stage"><video id="v" playsinline muted autoplay></video><div class="frame" id="frame"></div></div>
+  <footer>
+    <p class="msg" id="msg">開啟相機中…</p>
+    <div class="row"><button type="button" id="torch" hidden>🔦 手電筒</button><button type="button" id="photo">🖼️ 改用拍照</button><button type="button" class="pri" id="close" hidden>回到系統</button></div>
+    <p class="hint" id="hint">把 QR 對準框框，掃到會自動回到系統。</p>
+  </footer>
+</div>
+<input type="file" id="file" accept="image/*" capture="environment" hidden>
+<script>
+(function () {
+  'use strict';
+  // 系統（Apps Script 網頁）外面包著 Google 的框架，框架沒開相機權限，所以即時掃描放在這一頁。
+  // 參數：k＝u（識別證）｜c（物料、批次、工具、工具箱標籤）、n＝系統給的一次性號碼、o＝系統分頁的來源、a＝系統網址（轉送用）
+  var APP = 'https://script.google.com/macros/s/AKfycbw-MXuDDa5Qs6PpkMcdDq46FCAX9zCBhC1DMtbPkypCWiIIs5l7ia3K9KHJSCOs8rTL/exec';   // 跟 index.html 的 APP 一樣
+  var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+  var JSQR_SRI = 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx';
+  var RE = { u: /ID-[A-HJ-NP-Z2-9]{10}/, tool: /^[A-Z]{2,}-\d{3,}-\d{2,}$/, box: /^TB-\d{3,}$/, mat: /^[A-Z]{2,}-\d{3,}$/, batch: /^[A-Z]{2,}-\d{3,}-\d{8}-\d{2,}$/ };
+
+  var q = {};
+  location.search.replace(/^\?/, '').split('&').forEach(function (kv) {
+    var i = kv.indexOf('='); if (i < 1) return;
+    try { q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' ')); } catch (e) { /* 略過壞掉的參數 */ }
+  });
+  var K = q.k === 'u' ? 'u' : 'c';
+  var N = /^[A-Za-z0-9]{16,40}$/.test(q.n || '') ? q.n : '';
+  // 只把結果送回 Apps Script 網頁：來源、網址都要是 Google 的格式
+  var O = /^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(q.o || '') ? q.o : '';
+  var A = /^https:\/\/script\.google\.com\/(a\/[^\/?#]+\/)?macros\/s\/[A-Za-z0-9_-]+\/(exec|dev)$/.test(q.a || '') ? q.a : (N ? APP : '');
+
+  var $ = function (id) { return document.getElementById(id); };
+  var video = $('v'), msg = $('msg'), frame = $('frame'), stream = null, done = false, detector = null, jsQR = null, canvas = document.createElement('canvas');
+  $('title').textContent = K === 'u' ? '掃描識別證' : '掃描標籤';
+  if (K === 'u') $('hint').textContent = '把識別證的 QR 對準框框，掃到會自動回到系統。';
+
+  function say(t, cls) { msg.textContent = t; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
+
+  /** 掃到的文字 → 要的代號（識別證：識別碼；標籤：原文，系統會自己解析網址） */
+  function pick(text) {
+    var s = String(text || '').trim(), up = s.toUpperCase();
+    if (K === 'u') { var m = up.replace(/\s+/g, '').match(RE.u); return m ? m[0] : ''; }
+    var p = up.match(/[?&]([MBTX])=([^&#]+)/g);
+    if (p) return s;
+    var c = up.replace(/\s+/g, '');
+    return RE.tool.test(c) || RE.box.test(c) || RE.mat.test(c) || RE.batch.test(c) ? c : '';
+  }
+
+  function stopCam() { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+
+  function send(code) {
+    if (done) return;
+    done = true;
+    stopCam();
+    frame.className = 'frame hit';
+    try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) { /* 不支援震動 */ }
+    if (!N) {   // 不是從系統開的：標籤直接打開系統；識別證只能在系統的領還畫面用
+      if (K === 'c') { say('✔ 已掃到，打開系統…', 'ok'); location.replace('index.html?' + toParam(code)); }
+      else say('這是識別證：請在系統的出庫、借出、歸還畫面按「掃描識別證」', 'bad');
+      return;
+    }
+    var posted = false;
+    if (window.opener && O) { try { window.opener.postMessage({ type: 'unilux-scan', n: N, code: code }, O); posted = true; } catch (e) { /* 改走轉送 */ } }
+    // 也經過系統轉送一份：手機不讓兩個分頁互傳時，系統回到前景會來拿
+    if (A) { try { fetch(A, { method: 'POST', mode: 'no-cors', keepalive: true, body: JSON.stringify({ action: 'scan', n: N, code: code }) }); } catch (e) { /* 只剩互傳 */ } }
+    say('✔ 已掃到，回到系統…', 'ok');
+    setTimeout(function () { window.close(); }, posted ? 400 : 1200);
+    setTimeout(function () {
+      say('✔ 已送回系統。這個分頁沒有自動關掉的話，請切回「一六日誌」。', 'ok');
+      $('close').hidden = false; $('photo').hidden = true; $('torch').hidden = true;
+    }, 1800);
+  }
+  function toParam(raw) {
+    var up = String(raw).toUpperCase(), m = up.match(/[?&]([MBTX])=([^&#]+)/g);
+    if (m) return m.map(function (x) { return x.slice(1).toLowerCase().replace(/=.*/, '') + '=' + encodeURIComponent(x.split('=')[1]); }).join('&');
+    if (RE.box.test(up)) return 'x=' + up;
+    if (RE.tool.test(up)) return 't=' + up;
+    if (RE.batch.test(up)) return 'm=' + up.split('-').slice(0, 2).join('-') + '&b=' + up;
+    return 'm=' + up;
+  }
+
+  $('cancel').onclick = function () {
+    stopCam();
+    if (window.opener && O && N) { try { window.opener.postMessage({ type: 'unilux-scan', n: N, cancel: true }, O); } catch (e) { /* 忽略 */ } }
+    window.close();
+    setTimeout(function () { say('已取消，請切回「一六日誌」。'); }, 400);
+  };
+  $('close').onclick = function () { window.close(); };
+
+  function loadJsQR() {
+    if (window.jsQR) return Promise.resolve(window.jsQR);
+    return new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = JSQR_URL; s.integrity = JSQR_SRI; s.crossOrigin = 'anonymous';
+      s.onload = function () { window.jsQR ? res(window.jsQR) : rej(new Error('QR 讀取元件載入失敗')); };
+      s.onerror = function () { rej(new Error('QR 讀取元件載入失敗，請確認網路')); };
+      document.head.appendChild(s);
+    });
+  }
+  /** Android 有內建的條碼辨識（QR、Data Matrix、一維條碼都讀）；iPhone 沒有，用 jsQR（只讀 QR） */
+  function makeDetector() {
+    if (!window.BarcodeDetector) return Promise.resolve(null);
+    var want = ['qr_code', 'data_matrix', 'code_128'];
+    return (window.BarcodeDetector.getSupportedFormats ? window.BarcodeDetector.getSupportedFormats() : Promise.resolve(want)).then(function (f) {
+      var use = want.filter(function (x) { return f.indexOf(x) !== -1; });
+      return use.length ? new window.BarcodeDetector({ formats: use }) : null;
+    }, function () { return null; });
+  }
+  /** 從畫面（影片或照片）讀一次 → 掃到的文字或 '' */
+  function readOnce(src, w, h, crop) {
+    if (detector) return detector.detect(src).then(function (r) {
+      for (var i = 0; i < (r || []).length; i++) if (pick(r[i].rawValue)) return r[i].rawValue;
+      return '';
+    }, function () { return ''; });
+    if (!jsQR) return Promise.resolve('');
+    // 只讀中間框框那一塊，縮到 480 像素：快、也不容易讀到旁邊別的碼
+    var side = crop ? Math.min(w, h) * 0.8 : Math.max(w, h), sx = crop ? (w - side) / 2 : 0, sy = crop ? (h - side) / 2 : 0;
+    var out = crop ? 480 : Math.min(1200, Math.max(w, h)), k = out / side;
+    canvas.width = Math.round((crop ? side : w) * k); canvas.height = Math.round((crop ? side : h) * k);
+    var g = canvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(src, sx, sy, crop ? side : w, crop ? side : h, 0, 0, canvas.width, canvas.height);
+    var d = g.getImageData(0, 0, canvas.width, canvas.height), r = jsQR(d.data, d.width, d.height, { inversionAttempts: crop ? 'dontInvert' : 'attemptBoth' });
+    return Promise.resolve(r && r.data ? r.data : '');
+  }
+
+  var last = 0, wrong = '';
+  function loop(t) {
+    if (done || !stream) return;
+    if (t - last > 140 && video.readyState >= 2 && video.videoWidth) {
+      last = t;
+      readOnce(video, video.videoWidth, video.videoHeight, true).then(function (txt) {
+        if (done || !txt) return;
+        var code = pick(txt);
+        if (code) send(code);
+        else if (txt !== wrong) { wrong = txt; say(K === 'u' ? '這不是識別證的 QR' : '看不懂這個碼，請掃系統印的標籤', 'bad'); }
+      });
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function startCam() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('這個瀏覽器不能開相機，請按「改用拍照」', 'bad'); return; }
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }).then(function (s) {
+      stream = s;
+      video.srcObject = s;
+      var p = video.play(); if (p && p.catch) p.catch(function () { /* iOS 會自己播 */ });
+      say('對準 QR…');
+      var tr = s.getVideoTracks()[0], caps = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+      if (caps.torch) {
+        var on = false;
+        $('torch').hidden = false;
+        $('torch').onclick = function () { on = !on; tr.applyConstraints({ advanced: [{ torch: on }] }).catch(function () { /* 不支援 */ }); };
+      }
+      requestAnimationFrame(loop);
+    }, function (e) {
+      say(e && e.name === 'NotAllowedError'
+        ? '沒有相機權限：請在瀏覽器設定允許這個網站使用相機，或按「改用拍照」'
+        : '開不了相機（' + (e && e.name || e) + '），請按「改用拍照」', 'bad');
+    });
+  }
+
+  // 拍照備援：相機權限被拒、或光線太暗時
+  $('photo').onclick = function () { $('file').value = ''; $('file').click(); };
+  $('file').onchange = function () {
+    var f = $('file').files && $('file').files[0];
+    if (!f) return;
+    say('讀取照片…');
+    var url = URL.createObjectURL(f), img = new Image();
+    img.onload = function () {
+      readOnce(img, img.naturalWidth, img.naturalHeight, false).then(function (txt) {
+        URL.revokeObjectURL(url);
+        var code = pick(txt);
+        if (code) send(code); else say(txt ? (K === 'u' ? '這不是識別證的 QR' : '看不懂這個碼') : '照片裡讀不到 QR：靠近一點、拍清楚再試一次', 'bad');
+      });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); say('照片打不開，請再拍一次', 'bad'); };
+    img.src = url;
+  };
+
+  makeDetector().then(function (d) {
+    detector = d;
+    if (d) return startCam();
+    return loadJsQR().then(function (j) { jsQR = j; startCam(); }, function (e) { say(e.message, 'bad'); });
+  });
+})();
+</script>
+</body>
+</html>

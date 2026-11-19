@@ -121,6 +121,7 @@
   <b>清管作業列印</b>
   <span id="summary"></span>
   <label id="lCards"><input type="checkbox" id="pCards" checked> 個人任務卡</label>
+  <label id="lSkip" hidden><input type="checkbox" id="pSkip" checked> 已發到手機的人不印</label>
   <label id="lCmd"><input type="checkbox" id="pCmd" checked> 指揮總表</label>
   <label><input type="checkbox" id="pList" checked> 準備清單</label>
   <span class="acts">
@@ -160,7 +161,7 @@
     pagesEl.appendChild(el('div', 'err', '列印資料是舊版的，請回一六日誌系統重新按一次「列印」。'));
     return;
   }
-  var P = D.prog || null, steps = P ? P.steps || [] : [], lists = D.lists || [], people = D.people || [], roles = D.roles || {};
+  var P = D.prog || null, steps = P ? P.steps || [] : [], lists = D.lists || [], people = D.people || [], roles = D.roles || {}, phone = D.cards || [];
   var GEO = ['全區', '發射端', '沿線', '接收端'];
 
   function vpill(valve, action, big) {
@@ -245,6 +246,7 @@
       if (x.note) by[x.n].notes.push((by[x.n].keys.length > 1 ? postName(x.p) + '：' : '') + x.note);
     });
     POSTS.forEach(function (p) { if (!namesOf(p.key).length) out.push({ name: '', keys: [p.key], notes: [] }); });
+    if (document.getElementById('pSkip').checked) out = out.filter(function (C) { return !C.name || phone.indexOf(C.name) < 0; });
     return out;
   }
   var CMD = namesOf('全區|指揮官');
@@ -392,7 +394,7 @@
       if (first) {
         var ro = el('div', 'roster'), by = {}, names = [];
         people.forEach(function (x) { if (!by[x.n]) { by[x.n] = []; names.push(x.n); } by[x.n].push(postName(x.p) + (x.note ? '（' + x.note + '）' : '')); });
-        names.forEach(function (n) { ro.appendChild(el('div', null, null, el('b', null, n), el('span', null, '　' + by[n].join('、')))); });
+        names.forEach(function (n) { ro.appendChild(el('div', null, null, el('b', null, n + (phone.indexOf(n) >= 0 ? ' 📱' : '')), el('span', null, '　' + by[n].join('、')))); });
         if (names.length) col.appendChild(ro);
       }
       first = false;
@@ -442,7 +444,8 @@
     document.documentElement.style.setProperty('--z', String(Math.min(1, (w - 16) / (210 * mm))));
   }
   window.addEventListener('resize', fit);
-  ['pCards', 'pCmd', 'pList'].forEach(function (id) { document.getElementById(id).addEventListener('change', render); });
+  ['pCards', 'pSkip', 'pCmd', 'pList'].forEach(function (id) { document.getElementById(id).addEventListener('change', render); });
+  if (phone.length && P) document.getElementById('lSkip').hidden = false;
   if (!P || !steps.length) { document.getElementById('lCards').hidden = true; document.getElementById('lCmd').hidden = true; }
 
   /* ---------- PDF：每頁拍成圖（html2canvas），組成 A4 PDF；手機不能直接列印時用 ---------- */

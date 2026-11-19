@@ -6,6 +6,7 @@
 |---|---|
 | `index.html` | 手機主畫面圖示的入口：從圖示打開（或網址帶 `?go`）直接進系統；用瀏覽器打開時顯示「加到主畫面」說明 |
 | `labels.html` | 物料／批次 QR 標籤列印頁（A4 24 格 70×37mm），由系統「📦 物料進出 → 📊 庫存統計 → 🏷️ 列印標籤」打開 |
+| `pig.html` | 清管作業列印頁：流程圖、每個角色一張任務卡、準備清單（A4，可列印或存 PDF），由系統「更多 → 清管範本 → 🖨️ 列印」打開；資料放網址 `#`，不送到伺服器 |
 | `qrcode.js` | QR Code Generator for JavaScript v1.4.4（Kazuhiko Arase，MIT），原檔未修改，`labels.html` 用 |
 | `manifest.webmanifest`、`icon-*.png` | 加到主畫面用的名稱與圖示 |
 

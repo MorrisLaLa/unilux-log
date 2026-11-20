@@ -44,18 +44,18 @@
 (function () {
   'use strict';
   // 系統（Apps Script 網頁）外面包著 Google 的框架，框架沒開相機權限，所以即時掃描放在這一頁。
-  // 參數：k＝u（識別證）｜c（物料、批次、工具、工具箱標籤）、n＝系統給的一次性號碼、o＝系統分頁的來源、a＝系統網址（轉送用）
+  // 參數：k＝u（識別證）｜c（物料、批次、工具、工具箱標籤）｜i（電子發票左邊的 QR）、n＝系統給的一次性號碼、o＝系統分頁的來源、a＝系統網址（轉送用）
   var APP = 'https://script.google.com/macros/s/AKfycbw-MXuDDa5Qs6PpkMcdDq46FCAX9zCBhC1DMtbPkypCWiIIs5l7ia3K9KHJSCOs8rTL/exec';   // 跟 index.html 的 APP 一樣
   var JSQR_URL = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
   var JSQR_SRI = 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx';
-  var RE = { u: /ID-[A-HJ-NP-Z2-9]{10}/, tool: /^[A-Z]{2,}-\d{3,}-\d{2,}$/, box: /^TB-\d{3,}$/, mat: /^[A-Z]{2,}-\d{3,}$/, batch: /^[A-Z]{2,}-\d{3,}-\d{8}-\d{2,}$/ };
+  var RE = { i: /^[A-Z]{2}\d{8}\d{7}\d{4}[0-9A-Fa-f]{16}\d{16}/, u: /ID-[A-HJ-NP-Z2-9]{10}/, tool: /^[A-Z]{2,}-\d{3,}-\d{2,}$/, box: /^TB-\d{3,}$/, mat: /^[A-Z]{2,}-\d{3,}$/, batch: /^[A-Z]{2,}-\d{3,}-\d{8}-\d{2,}$/ };
 
   var q = {};
   location.search.replace(/^\?/, '').split('&').forEach(function (kv) {
     var i = kv.indexOf('='); if (i < 1) return;
     try { q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1).replace(/\+/g, ' ')); } catch (e) { /* 略過壞掉的參數 */ }
   });
-  var K = q.k === 'u' ? 'u' : 'c';
+  var K = q.k === 'u' || q.k === 'i' ? q.k : 'c';
   var N = /^[A-Za-z0-9]{16,40}$/.test(q.n || '') ? q.n : '';
   // 只把結果送回 Apps Script 網頁：來源、網址都要是 Google 的格式
   var O = /^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(q.o || '') ? q.o : '';
@@ -63,8 +63,9 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var video = $('v'), msg = $('msg'), frame = $('frame'), stream = null, done = false, detector = null, jsQR = null, canvas = document.createElement('canvas');
-  $('title').textContent = K === 'u' ? '掃描識別證' : '掃描標籤';
+  $('title').textContent = K === 'u' ? '掃描識別證' : K === 'i' ? '掃描電子發票' : '掃描標籤';
   if (K === 'u') $('hint').textContent = '把識別證的 QR 對準框框，掃到會自動回到系統。';
+  if (K === 'i') $('hint').textContent = '對準發票「左邊」那個 QR（右邊的不用），掃到會自動帶金額、日期回系統。';
 
   function say(t, cls) { msg.textContent = t; msg.className = 'msg' + (cls ? ' ' + cls : ''); }
 
@@ -72,10 +73,17 @@
   function pick(text) {
     var s = String(text || '').trim(), up = s.toUpperCase();
     if (K === 'u') { var m = up.replace(/\s+/g, '').match(RE.u); return m ? m[0] : ''; }
+    if (K === 'i') return RE.i.test(s) ? s.slice(0, 200) : '';   // 只送前面的發票資料（系統再檢查一次）
     var p = up.match(/[?&]([MBTX])=([^&#]+)/g);
     if (p) return s;
     var c = up.replace(/\s+/g, '');
     return RE.tool.test(c) || RE.box.test(c) || RE.mat.test(c) || RE.batch.test(c) ? c : '';
+  }
+
+  function wrongMsg(txt) {
+    if (K === 'u') return '這不是識別證的 QR';
+    if (K === 'i') return /^\*\*/.test(String(txt)) ? '這是發票右邊的 QR，請對準左邊那個' : '這不是電子發票的 QR';
+    return '看不懂這個碼，請掃系統印的標籤';
   }
 
   function stopCam() { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
@@ -88,6 +96,7 @@
     try { if (navigator.vibrate) navigator.vibrate(80); } catch (e) { /* 不支援震動 */ }
     if (!N) {   // 不是從系統開的：標籤直接打開系統；識別證只能在系統的領還畫面用
       if (K === 'c') { say('✔ 已掃到，打開系統…', 'ok'); location.replace('index.html?' + toParam(code)); }
+      else if (K === 'i') say('請從系統的「工地支出」按「掃發票 QR」再掃', 'bad');
       else say('這是識別證：請在系統的出庫、借出、歸還畫面按「掃描識別證」', 'bad');
       return;
     }
@@ -147,12 +156,29 @@
     if (!jsQR) return Promise.resolve('');
     // 只讀中間框框那一塊，縮到 480 像素：快、也不容易讀到旁邊別的碼
     var side = crop ? Math.min(w, h) * 0.8 : Math.max(w, h), sx = crop ? (w - side) / 2 : 0, sy = crop ? (h - side) / 2 : 0;
-    var out = crop ? 480 : Math.min(1200, Math.max(w, h)), k = out / side;
+    var out = crop ? (K === 'i' ? 720 : 480) : Math.min(1200, Math.max(w, h)), k = out / side;   // 發票的 QR 比較密，用大一點
     canvas.width = Math.round((crop ? side : w) * k); canvas.height = Math.round((crop ? side : h) * k);
     var g = canvas.getContext('2d', { willReadFrequently: true });
     g.drawImage(src, sx, sy, crop ? side : w, crop ? side : h, 0, 0, canvas.width, canvas.height);
     var d = g.getImageData(0, 0, canvas.width, canvas.height), r = jsQR(d.data, d.width, d.height, { inversionAttempts: crop ? 'dontInvert' : 'attemptBoth' });
     return Promise.resolve(r && r.data ? r.data : '');
+  }
+
+  /** 發票照片：兩個 QR 並排，整張讀常常失敗；再切左半邊（要的那個）、放大試幾次 */
+  function readInvoicePhoto(img, w, h) {
+    return readOnce(img, w, h, false).then(function (t) {
+      if (pick(t) || detector || !jsQR) return t;
+      var tries = [[0, 0, 0.55, 1, 1200], [0, 0, 0.55, 1, 1800], [0, 0, 1, 1, 1800], [0, 0.45, 1, 0.55, 1200], [0, 0, 1, 0.55, 1200]], first = t;
+      for (var i = 0; i < tries.length; i++) {
+        var r = tries[i], sw = w * r[2], sh = h * r[3], k = Math.min(1, r[4] / Math.max(sw, sh));
+        canvas.width = Math.max(1, Math.round(sw * k)); canvas.height = Math.max(1, Math.round(sh * k));
+        var g = canvas.getContext('2d', { willReadFrequently: true });
+        g.drawImage(img, w * r[0], h * r[1], sw, sh, 0, 0, canvas.width, canvas.height);
+        var d = g.getImageData(0, 0, canvas.width, canvas.height), q2 = jsQR(d.data, d.width, d.height, { inversionAttempts: 'attemptBoth' });
+        if (q2 && q2.data) { if (pick(q2.data)) return q2.data; first = first || q2.data; }
+      }
+      return first;
+    });
   }
 
   var last = 0, wrong = '';
@@ -164,7 +190,7 @@
         if (done || !txt) return;
         var code = pick(txt);
         if (code) send(code);
-        else if (txt !== wrong) { wrong = txt; say(K === 'u' ? '這不是識別證的 QR' : '看不懂這個碼，請掃系統印的標籤', 'bad'); }
+        else if (txt !== wrong) { wrong = txt; say(wrongMsg(txt), 'bad'); }
       });
     }
     requestAnimationFrame(loop);
@@ -199,10 +225,10 @@
     say('讀取照片…');
     var url = URL.createObjectURL(f), img = new Image();
     img.onload = function () {
-      readOnce(img, img.naturalWidth, img.naturalHeight, false).then(function (txt) {
+      (K === 'i' ? readInvoicePhoto : function (a, b, c) { return readOnce(a, b, c, false); })(img, img.naturalWidth, img.naturalHeight).then(function (txt) {
         URL.revokeObjectURL(url);
         var code = pick(txt);
-        if (code) send(code); else say(txt ? (K === 'u' ? '這不是識別證的 QR' : '看不懂這個碼') : '照片裡讀不到 QR：靠近一點、拍清楚再試一次', 'bad');
+        if (code) send(code); else say(txt ? wrongMsg(txt) : '照片裡讀不到 QR：靠近一點、拍清楚再試一次', 'bad');
       });
     };
     img.onerror = function () { URL.revokeObjectURL(url); say('照片打不開，請再拍一次', 'bad'); };

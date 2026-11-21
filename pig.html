@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>一六日誌・清管作業列印</title>
+<script src="qrcode.js"></script>
 <style>
   @page { size: A4; margin: 0 }
   * { box-sizing: border-box }
@@ -108,6 +109,32 @@
   .lr .s { color: var(--muted); font-size: 2.9mm }
   .lr .q { font-weight: 800; white-space: nowrap; text-align: right }
   .lr .q small { display: block; font-weight: 400; color: var(--muted); font-size: 2.7mm }
+  /* 派工單：一份派工一頁（人多會接到下一頁）；編號印成 QR 和一維條碼 */
+  .dtop { display: grid; grid-template-columns: 1fr 50mm; gap: 5mm; align-items: start; flex: none }
+  .dinfo { display: grid; grid-template-columns: 30mm 1fr; border: .3mm solid var(--line); border-radius: 1.6mm; overflow: hidden; font-size: 3.4mm; line-height: 1.4 }
+  .dinfo > div { padding: 1.1mm 2.2mm; border-bottom: .2mm solid #e3e7ea }
+  .dinfo .k { background: #f4f6f7; color: var(--muted); font-weight: 700 }
+  .dinfo .v b { font-size: 4.2mm }
+  .dcodes { display: grid; justify-items: center; gap: 1.2mm; text-align: center }
+  .dcodes canvas.dqr { width: 38mm; height: 38mm }
+  .dcodes canvas.dbc { width: 50mm; height: 12mm }
+  .dno { font-size: 6.4mm; font-weight: 900; letter-spacing: .3mm; font-family: ui-monospace, Menlo, Consolas, monospace }
+  .dhint { font-size: 2.6mm; color: var(--muted); line-height: 1.35 }
+  .dsec { flex: none; margin: 2.8mm 0 1mm; font-weight: 800; font-size: 3.8mm; color: var(--brand); border-left: 1mm solid var(--accent); padding-left: 2mm }
+  .drow { flex: none; display: grid; grid-template-columns: 17mm 36mm 1fr 9mm 38mm; font-size: 3.4mm; border-bottom: .2mm solid #d9dfe2; align-items: stretch; min-height: 7mm }
+  .drow > span { padding: .6mm 1.6mm; display: flex; align-items: center }
+  .drow.h { font-weight: 800; color: var(--muted); font-size: 3mm; border-bottom: .4mm solid var(--brand); min-height: 6mm }
+  .drow .sig { border-left: .2mm dashed #b8c2c8 }
+  .drow b { font-size: 3.8mm }
+  .dgrid { flex: none; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3mm; font-size: 3.1mm; line-height: 1.45 }
+  .dbox { border: .3mm solid var(--line); border-radius: 1.6mm; padding: 1.6mm 2.2mm; min-height: 16mm }
+  .dbox b { display: block; color: var(--brand); margin-bottom: .6mm; font-size: 3.3mm }
+  .dbox .no { color: #8a969d }
+  .dexec { flex: none; display: grid; grid-template-columns: 12mm 30mm repeat(4, 19mm) 22mm 1fr; font-size: 3.1mm; border-bottom: .2mm solid #d9dfe2; min-height: 7.5mm }
+  .dexec > span { padding: 1mm 1.4mm; border-right: .2mm dashed #d9dfe2; display: flex; align-items: center }
+  .dexec.h { font-weight: 800; color: var(--muted); border-bottom: .4mm solid var(--brand); min-height: 6mm }
+  .dsign { flex: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 5mm; margin-top: 3mm; font-size: 3.2mm }
+  .dsign div { border-top: .3mm solid #333; padding-top: 1mm; text-align: center; margin-top: 11mm; color: var(--muted) }
   @media print {
     body { background: #fff }
     .bar, .err { display: none !important }
@@ -120,6 +147,7 @@
 <div class="bar" id="bar" hidden>
   <b>清管作業列印</b>
   <span id="summary"></span>
+  <label id="lSheet" hidden><input type="checkbox" id="pSheet" checked> 派工單</label>
   <label id="lCards"><input type="checkbox" id="pCards" checked> 個人任務卡</label>
   <label id="lSkip" hidden><input type="checkbox" id="pSkip" checked> 已發到手機的人不印</label>
   <label id="lCmd"><input type="checkbox" id="pCmd" checked> 指揮總表</label>
@@ -403,6 +431,112 @@
     }, cont);
   }
 
+  /* ---------- Code128（B、C 兩組；代號只有大寫英數和 -） ---------- */
+  var C128 = ['212222', '222122', '222221', '121223', '121322', '131222', '122213', '122312', '132212', '221213', '221312', '231212', '112232', '122132',
+    '122231', '113222', '123122', '123221', '223211', '221132', '221231', '213212', '223112', '312131', '311222', '321122', '321221', '312212', '322112',
+    '322211', '212123', '212321', '232121', '111323', '131123', '131321', '112313', '132113', '132311', '211313', '231113', '231311', '112133', '112331',
+    '132131', '113123', '113321', '133121', '313121', '211331', '231131', '213113', '213311', '213131', '311123', '311321', '331121', '312113', '312311',
+    '332111', '314111', '221411', '431111', '111224', '111422', '121124', '121421', '141122', '141221', '112214', '112412', '122114', '122411', '142112',
+    '142211', '241211', '221114', '413111', '241112', '134111', '111242', '121142', '121241', '114212', '124112', '124211', '411212', '421112', '421211',
+    '212141', '214121', '412121', '111143', '111341', '131141', '114113', '114311', '411113', '411311', '113141', '114131', '311141', '411131', '211412',
+    '211214', '211232', '2331112'];
+  /** 字串 → 條與空的寬度序列（模組數），含起始、檢查碼、結束；數字連續夠長時切到 C 組縮短長度 */
+  function code128(s) {
+    function run(k) { var n = 0; while (k + n < s.length && s.charCodeAt(k + n) >= 48 && s.charCodeAt(k + n) <= 57) n++; return n; }
+    var vals = [], i = 0, set;
+    if (run(0) >= 4) { vals.push(105); set = 'C'; } else { vals.push(104); set = 'B'; }
+    while (i < s.length) {
+      if (set === 'C') {
+        if (run(i) >= 2) { vals.push(+s.substr(i, 2)); i += 2; } else { vals.push(100); set = 'B'; }
+        continue;
+      }
+      var d = run(i);
+      if (d >= 6 || (d >= 4 && i + d === s.length)) {
+        if (d % 2) { vals.push(s.charCodeAt(i) - 32); i++; }
+        vals.push(99); set = 'C';
+        continue;
+      }
+      var cc = s.charCodeAt(i);
+      if (cc < 32 || cc > 126) throw new Error('條碼不支援的字元');
+      vals.push(cc - 32); i++;
+    }
+    var sum = vals[0];
+    for (var k = 1; k < vals.length; k++) sum += vals[k] * k;
+    vals.push(sum % 103, 106);
+    return vals.map(function (v) { return C128[v]; }).join('');
+  }
+  /** 一維條碼（Code128）畫在 canvas：每個模組 4 像素，兩邊留白 10 模組 */
+  function barCanvas(text) {
+    var w = code128(text), mods = 20, px = 4, x = 10 * px;
+    for (var i = 0; i < w.length; i++) mods += +w[i];
+    var c = document.createElement('canvas'); c.width = mods * px; c.height = 120; c.className = 'dbc';
+    var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+    for (var k = 0; k < w.length; k++) { var n = +w[k] * px; if (k % 2 === 0) g.fillRect(x, 0, n, c.height); x += n; }
+    return c;
+  }
+  /** QR Code 畫在 canvas（四周留白 4 模組）；內容是 App 網址?pg=派工編號 */
+  function qrCanvas(text) {
+    var q = qrcode(0, 'M'); q.addData(text); q.make();
+    var n = q.getModuleCount(), s = Math.max(4, Math.floor(480 / (n + 8)));
+    var c = document.createElement('canvas'); c.width = c.height = (n + 8) * s; c.className = 'dqr';
+    var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) if (q.isDark(y, x)) g.fillRect((x + 4) * s, (y + 4) * s, s, s);
+    return c;
+  }
+
+  /* ---------- 派工單：一份派工的總表（編號條碼＋QR、基本資料、崗位與人、資源、材料、執行紀錄、簽名） ---------- */
+  var SH = D.sheet || null;
+  function drawSheet() {
+    function kv(k, v, strong) { return [el('div', 'k', k), el('div', 'v', null, strong ? el('b', null, v || '—') : document.createTextNode(v || '—'))]; }
+    var info = el('div', 'dinfo');
+    [kv('派工編號', SH.code, true), kv('日期', SH.date), kv('案號／案場', [SH.pid, SH.pname].filter(Boolean).join('　')), kv('說明（管線／區段）', SH.desc),
+      kv('程序', (SH.prog || '') + (SH.size && SH.size.label ? '（' + SH.size.label + '）' : '') + (SH.steps ? '，' + SH.steps + ' 步' : '')),
+      kv('對講機頻道', SH.ch), kv('這次沒有', (SH.skip || []).join('、') || '（全部都有）'), kv('清單', (SH.lists || []).join('、')),
+      kv('狀態', SH.status + (SH.runs ? '：' + SH.runs : ''))].forEach(function (p) { info.appendChild(p[0]); info.appendChild(p[1]); });
+    var codes = el('div', 'dcodes');
+    try { codes.appendChild(qrCanvas(SH.url || SH.code)); } catch (e) { /* QR 產生失敗：只印條碼 */ }
+    try { codes.appendChild(barCanvas(SH.code)); } catch (e) { /* 不支援的字元 */ }
+    codes.appendChild(el('div', 'dno', SH.code));
+    codes.appendChild(el('div', 'dhint', SH.url ? '手機相機掃 QR：直接打開這份派工\n掃碼槍掃條碼：在 App「掃描或輸入代號」打開' : '掃碼槍掃條碼：在 App「掃描或輸入代號」打開'));
+    codes.lastChild.style.whiteSpace = 'pre-line';
+    var blocks = [{ el: el('div', 'dtop', null, info, codes) }];
+    blocks.push({ head: true, el: el('div', 'dsec', '人員分配（' + (SH.posts || []).reduce(function (n, p) { return n + p.names.length; }, 0) + ' 人次；📱＝任務卡已發到手機）') });
+    blocks.push({ head: true, el: el('div', 'drow h', null, el('span', null, '站別'), el('span', null, '崗位'), el('span', null, '人員'), el('span', null, '📱'), el('span', 'sig', '到場簽名')) });
+    (SH.posts || []).forEach(function (p) {
+      var list = p.names.length ? p.names : [{ n: '', card: false, note: '' }];
+      list.forEach(function (x, i) {
+        blocks.push({ el: el('div', 'drow', null, el('span', null, null, i ? null : stTag(p.st || '全區')), el('span', null, i ? '' : p.role),
+          el('span', null, null, x.n ? el('b', null, x.n) : el('span', 'no', '（未派，現場填）'), x.note ? el('small', null, '　' + x.note) : null),
+          el('span', null, x.card ? '📱' : ''), el('span', 'sig')) });
+      });
+    });
+    function box(title, lines, empty) {
+      var b = el('div', 'dbox', null, el('b', null, title));
+      if (lines.length) lines.forEach(function (t) { b.appendChild(el('div', null, t)); }); else b.appendChild(el('div', 'no', empty));
+      return b;
+    }
+    var m = SH.mats;
+    blocks.push({ head: true, el: el('div', 'dsec', '資源與材料') });
+    blocks.push({ el: el('div', 'dgrid', null,
+      box('資源排程', (SH.bookings || []).map(function (b) { return b.code + ' ' + b.name + (b.status ? '（' + b.status + '）' : ''); }), '（沒有自動排的資源）'),
+      box('材料（預計 ' + (m ? m.runs + ' 趟、' + m.people + ' 人' : '') + '）', m ? m.items.map(function (x) { return x.code + ' ' + x.name + ' ' + x.need + ' ' + (x.unit || '') + (x.short ? '（缺 ' + x.short + '）' : ''); }) : [], '（清單沒有填物料代號）'),
+      box('已出庫', (SH.outs || []).map(function (o) { return o.code + ' ' + o.name + ' ×' + o.qty + ' ' + (o.unit || ''); }), '（還沒一鍵出庫）')) });
+    blocks.push({ head: true, el: el('div', 'dsec', '執行紀錄（手機打勾的紙本備份）') });
+    blocks.push({ head: true, el: el('div', 'dexec h', null, el('span', null, '趟次'), el('span', null, '清管器'), el('span', null, '開始'), el('span', null, '發球'), el('span', null, '到站'),
+      el('span', null, '完成'), el('span', null, '污泥量'), el('span', null, '備註')) });
+    for (var r = 1; r <= 3; r++) blocks.push({ el: el('div', 'dexec', null, el('span', null, String(r)), el('span'), el('span'), el('span'), el('span'), el('span'), el('span'), el('span')) });
+    blocks.push({ el: el('div', 'dsign', null, el('div', null, '指揮官'), el('div', null, '工安'), el('div', null, '業主代表'), el('div', null, '日期')) });
+    var first = true;
+    flow(blocks, function () {
+      var bits = [SH.date, SH.pid, SH.desc, '列印 ' + String(SH.printed || '').slice(5, 16).replace('-', '/')].filter(Boolean);
+      var body = sheet(first ? '清管派工單' : '清管派工單（續）', bits.map(function (b) { return el('span', null, b); }));
+      first = false;
+      var col = el('div', 'col');
+      body.appendChild(col);
+      return col;
+    });
+  }
+
   /* ---------- 準備清單：所有清單，2 欄，可以勾 ---------- */
   function drawList() {
     var blocks = [];
@@ -432,6 +566,7 @@
     pagesEl.innerHTML = ''; sheets = [];
     var z = getComputedStyle(document.documentElement).getPropertyValue('--z');
     document.documentElement.style.setProperty('--z', '1');   // 排版時用原尺寸量高度
+    if (SH && document.getElementById('pSheet').checked) drawSheet();
     if (P && steps.length && document.getElementById('pCards').checked) drawCards();
     if (P && steps.length && document.getElementById('pCmd').checked) drawCmd();
     if (document.getElementById('pList').checked && lists.length) drawList();
@@ -444,7 +579,9 @@
     document.documentElement.style.setProperty('--z', String(Math.min(1, (w - 16) / (210 * mm))));
   }
   window.addEventListener('resize', fit);
-  ['pCards', 'pSkip', 'pCmd', 'pList'].forEach(function (id) { document.getElementById(id).addEventListener('change', render); });
+  ['pSheet', 'pCards', 'pSkip', 'pCmd', 'pList'].forEach(function (id) { document.getElementById(id).addEventListener('change', render); });
+  if (SH) document.getElementById('lSheet').hidden = false;
+  if (SH && D.only === 'sheet') ['pCards', 'pCmd', 'pList'].forEach(function (id) { document.getElementById(id).checked = false; });   // 「📋 派工單」：只印派工單（要的話可以再勾）
   if (phone.length && P) document.getElementById('lSkip').hidden = false;
   if (!P || !steps.length) { document.getElementById('lCards').hidden = true; document.getElementById('lCmd').hidden = true; }
 
@@ -482,7 +619,7 @@
     var old = pdfBtn.textContent;
     pdfBtn.disabled = true; pdfBtn.textContent = '產生中…';
     makePdf().then(function (blob) {
-      var d = new Date(), name = 'pigging_' + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2) + '.pdf';
+      var d = new Date(), name = (SH ? SH.code + '_' : 'pigging_') + d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2) + '.pdf';
       var file = typeof File === 'function' ? new File([blob], name, { type: 'application/pdf' }) : null;
       var touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
       if (touch && file && navigator.canShare && navigator.canShare({ files: [file] })) return navigator.share({ files: [file], title: name }).catch(function () { /* 取消 */ });
